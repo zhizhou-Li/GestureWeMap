@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/reset.css">
+  <link rel="stylesheet" href="./css/bootstrap.css">
+  <link rel="stylesheet" href="./css/bootstrap.min.css">
+  <link rel="stylesheet" href="./css/iconfont/iconfont.css">
+  <title>手势识别地图绘制</title>
+  <!-- 必须先加载 MediaPipe，再加载高德地图，避免 WASM Module 冲突 -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js" crossorigin="anonymous"></script>
+  <!-- 高德地图：使用在线版避免与 MediaPipe WASM 冲突；离线时用 ./js/amap.js -->
+  <script src="https://webapi.amap.com/maps?v=2.0&key=76bcf3595a02e3b285ec5115a55a6a1d"></script>
+</head>
+
+<body>
+  <div class="nav1">
+    <div class="wrap">
+      <ul class="nav1-left">
+        <li><img src="./asset/logo.png" alt="Logo" /></li>
+        <li><a class="logo" href="#">微地图</a></li>
+        <li>
+          <a href="#">APP下载</a>
+          <div class="download">
+            <img src="./asset/logo.png" alt="APP Logo" />
+            <p>微地图APP</p>
+          </div>
+        </li>
+        <li><a href="#">关于微地图</a></li>
+        <li><a href="#">支持与帮助</a></li>
+        <!-- <li><a href="../editorselector/selector.html">进入绘图台</a></li> -->
+      </ul>
+
+      <ul class="nav1-right">
+        <li>
+          <button id="loginButton" class="hidden">登 录</button>
+        </li>
+        <li id="userInfo" class="hidden">
+          <button id="avatarButton" class="avatar-button">
+            <img id="avatar" alt="用户头像" />
+          </button>
+        </li>
+        <li>
+          <button id="logoutButton" class="hidden">退 出</button>
+        </li>
+        <li class="notices">
+          <a href="#"><span class="iconfont">&#xe63c;</span></a>
+          <div class="notices-list">暂无最新通知</div>
+        </li>
+        <li class="messages">
+          <a href="#"><span class="iconfont">&#xe62a;</span></a>
+          <div class="messages-list">暂无最新消息</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <!-- 主导航 end -->
+  <div class="container">
+    <!-- Overlay for camera permission prompt -->
+    <div id="cameraPrompt" class="camera-prompt">
+      <div class="prompt-content">
+        <h2>需要摄像头权限</h2>
+        <p id="permissionMessage">请点击下方按钮以启动摄像头并授予权限。</p>
+        <button id="startCameraButton" class="btn">启动摄像头</button>
+        <p id="permissionGuide" style="display: none; margin-top: 20px;">
+          权限被拒绝，请在浏览器设置中允许摄像头访问：<br>
+          - Chrome/Edge: <code>chrome://settings/content/camera</code><br>
+          - Firefox: <code>about:preferences#privacy</code> > 摄像头设置<br>
+          然后刷新页面并再次点击“启动摄像头”。
+        </p>
+      </div>
+    </div>
+
+    <!-- Top bar with buttons -->
+    <div class="top-bar">
+      <div class="left-buttons">
+        <button class="btn">打开</button>
+        <button class="btn">保存</button>
+      </div>
+      <div class="right-status">
+        <span class="status">
+          <span class="status-indicator"></span>
+          <span id="status-text">初始化中...</span>
+        </span>
+        <button class="btn" id="toggleGesture">手势识别</button>
+      </div>
+    </div>
+
+    <!-- Map container：video(底层) | map(中层) | 手部canvas(顶层叠加) -->
+    <div class="map-container">
+      <div id="map"></div>
+      <canvas id="canvas"></canvas>
+      <div id="videoContainer">
+        <video id="video" autoplay playsinline></video>
+      </div>
+    </div>
+
+    <!-- Controls container -->
+    <div class="controls-container">
+      <div class="controls">
+        <button class="control-btn" id="modePoint">
+          <img src="./asset/画点.png" alt="画点图标" class="icon">
+          <span>画点</span>
+        </button>
+        <button class="control-btn" id="modeLine">
+          <img src="./asset/画线.png" alt="画线图标" class="icon">
+          <span>画线</span>
+        </button>
+        <button class="control-btn" id="modeFace">
+          <img src="./asset/画面.png" alt="画面图标" class="icon">
+          <span>画面</span>
+        </button>
+        <button class="control-btn">
+          <img src="./asset/添加符号.png" alt="添加符号图标" class="icon">
+          <span>符号</span>
+        </button>
+        <button class="control-btn">
+          <img src="./asset/修改.png" alt="修改图标" class="icon">
+          <span>修改</span>
+        </button>
+      </div>
+      <select id="cameraSelect"></select>
+    </div>
+  </div>
+
+  <!-- 遮罩层（放在 body 最后） -->
+  <div id="modalOverlay" class="save-modal-overlay"></div>
+  <!-- 保存到服务器弹窗 -->
+  <div id="saveToServerModal" style="display: none;">
+    <div class="modal-content">
+      <div class="form-group">
+        <label><span style="color: red">*</span>地图名称：</label>
+        <input type="text" id="mapTitle" required>
+      </div>
+      <div class="form-group">
+        <label>地图坐标：</label>
+        <input type="text" id="mapCoordinate" value='(116.4074, 39.9042)'>
+        <button class="location-button" id="getCoordinatesBtn">定位</button>
+      </div>
+      <div class="form-group">
+        <label><span style="color: red">*</span>地图类型：</label>
+        <select id="categories" multiple required>
+          <option value="tour">旅游</option>
+          <option value="food">美食</option>
+          <option value="school">校园</option>
+          <option value="driving">自驾</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>地图描述：</label>
+        <textarea id="description" placeholder="这是一张旅游路线"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelBtn">取消</button>
+        <button id="confirmBtn">确定</button>
+      </div>
+
+    </div>
+  </div>
+  <!-- 在页面底部添加这些脚本引用 -->
+  <script src="./js/html2canvas.min.js"></script>
+  <script src="./js/FileSaver.min.js"></script>
+
+  <script src="./js/script.js"></script>
+</body>
+
+</html>

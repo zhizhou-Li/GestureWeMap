@@ -1,0 +1,1101 @@
+// 用户主页和登录页路径
+const USER_PROFILE_URL = '../userCenter1/userCenter.html';
+const LOGIN_PAGE_URL = '../login/login_index.html';
+
+// DOM 元素
+const avatarImg = document.getElementById('avatar');
+const loginButton = document.getElementById('loginButton');
+const avatarButton = document.getElementById('avatarButton');
+const logoutButton = document.getElementById('logoutButton');
+const userInfo = document.getElementById('userInfo');
+
+// 初始化用户状态
+document.addEventListener('DOMContentLoaded', function () {
+  const token = localStorage.getItem('token');
+
+  if (token) {
+    loginButton.classList.add('hidden');
+    userInfo.classList.remove('hidden');
+    logoutButton.classList.remove('hidden');
+    fetchUserAvatar(token);
+  } else {
+    loginButton.classList.remove('hidden');
+    userInfo.classList.add('hidden');
+    logoutButton.classList.add('hidden');
+  }
+
+  // 点击登录按钮跳转
+  loginButton.addEventListener('click', () => {
+    window.location.href = LOGIN_PAGE_URL;
+  });
+
+  // 点击退出按钮登出
+  logoutButton.addEventListener('click', () => {
+    localStorage.removeItem('token');
+    window.location.reload();
+  });
+
+  // 点击头像跳转到个人中心
+  avatarButton.addEventListener('click', () => {
+    window.location.href = USER_PROFILE_URL;
+  });
+});
+
+// 获取并显示用户头像
+function fetchUserAvatar(token) {
+  try {
+    const decodedToken = window.jwt_decode(token);
+    const userId = decodedToken.uid;
+
+    console.log('解析后的 token:', decodedToken);
+    console.log('提取的用户 ID:', userId);
+
+    if (!userId) {
+      console.error('无法从 token 中提取用户 ID');
+      avatarImg.style.display = 'none';
+      return;
+    }
+
+    const url = `http://10.3.27.104:8181/userService/api/v1/auth/${userId}/profile`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Device-Type': 'app',
+      'Authorization': `Bearer ${token}`
+    };
+
+    fetch(url, { method: 'GET', headers: headers })
+      .then(response => {
+        if (!response.ok) throw new Error('网络响应失败');
+        return response.json();
+      })
+      .then(data => {
+        if (data.success && data.data?.avatarUrl) {
+          avatarImg.src = data.data.avatarUrl;
+          avatarImg.style.display = 'block';
+        } else {
+          avatarImg.style.display = 'none';
+        }
+      })
+      .catch(error => {
+        console.error('获取用户头像失败:', error);
+        avatarImg.style.display = 'none';
+      });
+  } catch (error) {
+    console.error('解析 token 失败:', error);
+    avatarImg.style.display = 'none';
+  }
+}
+// 参数配置
+const CONFIG = {
+  // 手势距离阈值（相对于食指长度的比例）
+  thumbIndexPinchRatio: 0.2, // 拇指-食指捏合（缩放），距离/食指长度
+  thumbIndexSpreadRatio: 0.6, // 拇指-食指张开（放大），距离/食指长度
+  middleRingLittleRatio: 0.3, // 中指-无名指-小指靠近，距离/食指长度
+  pointDistanceClose: 0.05, // 绘制点：食指-中指靠近（绝对距离）
+  pointDistanceOpen: 0.10, // 绘制点：食指-中指张开（绝对距离）
+  faceCloseDistance: 0.05, // 绘制面：闭合距离（绝对距离）
+  pointInterval: 1000, // 绘制点/线/面的最小时间间隔（ms）
+  zoomInterval: 1000, // 缩放手势最小时间间隔（ms）
+  zoomStep: 0.5, // 每次缩放的级别增量
+  zoomAnimationDuration: 400, // 缩放动画持续时间（ms）
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7,
+  markerIcon: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_b.png',
+  markerOffsetX: -12,
+  markerOffsetY: -12,
+  tempMarkerOpacity: 0.5,
+  lineStrokeColor: '#00aaff',
+  lineStrokeWeight: 4,
+  faceFillColor: 'rgba(0, 170, 255, 0.3)',
+  faceStrokeColor: '#00aaff',
+  faceStrokeWeight: 2,
+  landmarkPointSize: 6,
+  landmarkPointColor: 'rgba(0, 255, 0, 0.8)',
+  connectionLineColor: 'rgba(0, 255, 255, 0.6)',
+  connectionLineWidth: 2
+};
+
+// 初始化高德地图
+const map = new AMap.Map('map', {
+  zoom: 10,
+  center: [116.397428, 39.90923],
+  renderer: 'canvas' // 强制使用 Canvas2D 渲染
+});
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const cameraSelect = document.getElementById('cameraSelect');
+const statusText = document.getElementById('status-text');
+const toggleGestureButton = document.getElementById('toggleGesture');
+const statusIndicator = document.querySelector('.status-indicator');
+const startCameraButton = document.getElementById('startCameraButton');
+const cameraPrompt = document.getElementById('cameraPrompt');
+const permissionMessage = document.getElementById('permissionMessage');
+const permissionGuide = document.getElementById('permissionGuide');
+
+let currentStream = null;
+let polyline = null;
+let polygon = null;
+let path = [];
+let tempMarker = null;
+let tempLngLat = null;
+let lastPointTime = 0;
+let lastZoomTime = 0;
+let markers = [];
+let polylines = [];
+let polygons = [];
+let gestureEnabled = true;
+let isZooming = false; // 动画状态标志
+
+const hands = new Hands({
+  locateFile: (file) => `./js/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: CONFIG.maxNumHands,
+  modelComplexity: CONFIG.modelComplexity,
+  minDetectionConfidence: CONFIG.minDetectionConfidence,
+  minTrackingConfidence: CONFIG.minTrackingConfidence
+});
+
+hands.onResults(onResults);
+
+let drawingMode = 'point';
+
+const modePointButton = document.getElementById('modePoint');
+const modeLineButton = document.getElementById('modeLine');
+const modeFaceButton = document.getElementById('modeFace');
+
+function resetTempState() {
+  if (tempMarker) {
+    map.remove(tempMarker);
+    tempMarker = null;
+  }
+  tempLngLat = null;
+
+  // ✅ 确保切换模式时将当前线/面加入数组
+  if (polyline) {
+    if (drawingMode === 'line' && path.length >= 1) {
+      polylines.push(polyline);
+    }
+    polyline = null;
+  }
+
+  if (polygon) {
+    if (drawingMode === 'face' && path.length > 2) {
+      polygons.push(polygon);
+    }
+    polygon = null;
+  }
+
+  path = [];
+}
+
+function setActiveButton(activeButton) {
+  [modePointButton, modeLineButton, modeFaceButton].forEach(button => {
+    button.classList.remove('active');
+  });
+  activeButton.classList.add('active');
+}
+
+modePointButton.addEventListener('click', () => {
+  drawingMode = 'point';
+  resetTempState();
+  setActiveButton(modePointButton);
+  statusText.textContent = '模式切换：绘制点';
+});
+
+modeLineButton.addEventListener('click', () => {
+  drawingMode = 'line';
+  resetTempState();
+  setActiveButton(modeLineButton);
+  statusText.textContent = '模式切换：绘制线';
+});
+
+modeFaceButton.addEventListener('click', () => {
+  drawingMode = 'face';
+  resetTempState();
+  setActiveButton(modeFaceButton);
+  statusText.textContent = '模式切换：绘制面';
+});
+
+toggleGestureButton.addEventListener('click', () => {
+  gestureEnabled = !gestureEnabled;
+  statusText.textContent = gestureEnabled ? '手势识别已开启' : '手势识别已关闭';
+  statusIndicator.style.backgroundColor = gestureEnabled ? 'rgb(18, 236, 18)' : '#F44336';
+  if (!gestureEnabled && currentStream) {
+    video.pause();
+  } else if (gestureEnabled && currentStream) {
+    video.play();
+    requestAnimationFrame(processVideo);
+  }
+});
+
+async function checkCameraPermission() {
+  if (!navigator.permissions || !navigator.permissions.query) {
+    permissionMessage.textContent = '请点击“启动摄像头”以授予权限。';
+    return 'unknown';
+  }
+  try {
+    const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+    return permissionStatus.state; // 'granted', 'denied', 'prompt'
+  } catch (err) {
+    console.error('Permission query error:', err);
+    return 'unknown';
+  }
+}
+
+async function setupCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    statusText.textContent = '浏览器不支持 getUserMedia API';
+    statusIndicator.style.backgroundColor = '#F44336';
+    cameraPrompt.style.display = 'flex';
+    permissionMessage.textContent = '浏览器不支持摄像头访问';
+    startCameraButton.style.display = 'none';
+    console.error('getUserMedia not supported');
+    return;
+  }
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videoDevices = devices.filter(device => device.kind === 'videoinput');
+  console.log('Available video devices:', videoDevices);
+
+  if (videoDevices.length === 0) {
+    statusText.textContent = '未检测到摄像头';
+    statusIndicator.style.backgroundColor = '#F44336';
+    cameraPrompt.style.display = 'flex';
+    permissionMessage.textContent = '未检测到摄像头，请检查设备连接';
+    startCameraButton.style.display = 'none';
+    console.error('No video devices found');
+    return;
+  }
+
+  videoDevices.forEach((device, index) => {
+    const option = document.createElement('option');
+    option.value = device.deviceId;
+    option.text = device.label || `摄像头 ${index + 1}`;
+    cameraSelect.appendChild(option);
+  });
+
+  startCamera(videoDevices[0].deviceId);
+
+  cameraSelect.addEventListener('change', () => {
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+    }
+    startCamera(cameraSelect.value);
+  });
+}
+
+function startCamera(deviceId) {
+  const constraints = {
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      frameRate: { ideal: 30 }
+    }
+  };
+  navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+    currentStream = stream;
+    video.srcObject = stream;
+    video.addEventListener('loadeddata', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      statusText.textContent = '摄像头已启动';
+      statusIndicator.style.backgroundColor = 'rgb(18, 236, 18)';
+      cameraPrompt.style.display = 'none';
+      if (gestureEnabled) {
+        requestAnimationFrame(processVideo);
+      }
+    });
+  }).catch(err => {
+    let errorMessage = '摄像头启动失败';
+    if (window.location.protocol === 'file:') {
+      errorMessage = '错误：请通过本地服务器运行，file:// 不支持摄像头';
+    } else if (err.name === 'NotAllowedError') {
+      errorMessage = '摄像头权限被拒绝，请在浏览器设置中允许摄像头访问';
+      permissionGuide.style.display = 'block';
+    } else if (err.name === 'NotFoundError') {
+      errorMessage = '未找到摄像头设备，请检查摄像头是否连接';
+    } else if (err.name === 'NotReadableError') {
+      errorMessage = '摄像头被其他应用程序占用，请关闭其他使用摄像头的程序';
+    } else if (err.name === 'OverconstrainedError') {
+      errorMessage = `摄像头约束错误：${err.constraint} 不被支持`;
+    } else {
+      errorMessage = `摄像头启动失败：${err.message}`;
+    }
+    statusText.textContent = errorMessage;
+    statusIndicator.style.backgroundColor = '#F44336';
+    cameraPrompt.style.display = 'flex';
+    permissionMessage.textContent = errorMessage;
+    console.error('getUserMedia error:', err.name, err.message, err.constraint);
+  });
+}
+
+async function processVideo() {
+  if (!gestureEnabled) return;
+  await hands.send({ image: video });
+  requestAnimationFrame(processVideo);
+}
+
+function detectGesture(landmarks) {
+  const wrist = landmarks[0]; // 手腕
+  const thumbTip = landmarks[4]; // 拇指尖
+  const indexTip = landmarks[8]; // 食指尖
+  const middleTip = landmarks[12]; // 中指尖
+  const ringTip = landmarks[16]; // 无名指尖
+  const littleTip = landmarks[20]; // 小指尖
+
+  const distance = (point1, point2) => {
+    const dx = point1.x - point2.x;
+    const dy = point1.y - point2.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // 计算食指长度（手腕到食指尖）作为参考
+  const indexFingerLength = distance(wrist, indexTip);
+  if (indexFingerLength === 0) {
+    return 'move'; // 避免除零错误
+  }
+
+  // 计算关键距离
+  const thumbIndexDistance = distance(thumbTip, indexTip);
+  const middleRingLittleDistance = Math.max(
+    distance(middleTip, ringTip),
+    distance(ringTip, littleTip),
+    distance(middleTip, littleTip)
+  );
+
+  // 归一化距离（除以食指长度）
+  const thumbIndexRatio = thumbIndexDistance / indexFingerLength;
+  const middleRingLittleRatio = middleRingLittleDistance / indexFingerLength;
+
+  // 手势判断
+  if (middleRingLittleRatio < CONFIG.middleRingLittleRatio) {
+    if (thumbIndexRatio < CONFIG.thumbIndexPinchRatio) {
+      return 'pinch';
+    } else if (thumbIndexRatio > CONFIG.thumbIndexSpreadRatio) {
+      return 'spread';
+    }
+  }
+  return 'move';
+}
+
+// 平滑缩放动画函数
+function smoothZoom(targetZoom, center, duration) {
+  if (isZooming) return; // 防止动画重叠
+  isZooming = true;
+
+  const startZoom = map.getZoom();
+  const startTime = performance.now();
+
+  function animate(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1); // 0 to 1
+    const ease = progress * (2 - progress); // Ease-in-out
+    const currentZoom = startZoom + (targetZoom - startZoom) * ease;
+
+    map.setZoomAndCenter(currentZoom, center, true); // 立即更新，依赖动画帧
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      isZooming = false; // 动画结束
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+function updateMap(gesture, landmarks) {
+  const indexTip = landmarks[8];
+  const middleTip = landmarks[12];
+
+  const rect = video.getBoundingClientRect();
+  const realX = (1 - indexTip.x) * rect.width;
+  const realY = indexTip.y * rect.height;
+  const lngLat = map.containerToLngLat(new AMap.Pixel(realX, realY));
+
+  const dx = indexTip.x - middleTip.x;
+  const dy = indexTip.y - middleTip.y;
+  const pointDistance = Math.sqrt(dx * dx + dy * dy);
+
+  if (drawingMode === 'point') {
+    const now = Date.now();
+    if (pointDistance < CONFIG.pointDistanceClose) {
+      if (tempMarker) {
+        map.remove(tempMarker);
+        tempMarker = null;
+      }
+      tempMarker = new AMap.Marker({
+        position: lngLat,
+        icon: CONFIG.markerIcon,
+        offset: new AMap.Pixel(CONFIG.markerOffsetX, CONFIG.markerOffsetY),
+        opacity: CONFIG.tempMarkerOpacity
+      });
+      map.add(tempMarker);
+      tempLngLat = lngLat;
+      statusText.textContent = '准备放置点，请张开食指和中指';
+    } else if (pointDistance > CONFIG.pointDistanceOpen && tempLngLat && now - lastPointTime > CONFIG.pointInterval) {
+      if (tempMarker) {
+        map.remove(tempMarker);
+        tempMarker = null;
+      }
+      const handMarker = new AMap.Marker({
+        position: tempLngLat,
+        icon: CONFIG.markerIcon,
+        offset: new AMap.Pixel(CONFIG.markerOffsetX, CONFIG.markerOffsetY)
+      });
+      map.add(handMarker);
+      markers.push(handMarker);
+      lastPointTime = now;
+      statusText.textContent = '点已放置，继续放置下一个点';
+      tempLngLat = null;
+    }
+  } else if (drawingMode === 'line') {
+    const now = Date.now();
+    if (pointDistance < CONFIG.pointDistanceClose) {
+      if (tempMarker) {
+        map.remove(tempMarker);
+        tempMarker = null;
+      }
+      tempMarker = new AMap.Marker({
+        position: lngLat,
+        icon: CONFIG.markerIcon,
+        offset: new AMap.Pixel(CONFIG.markerOffsetX, CONFIG.markerOffsetY),
+        opacity: CONFIG.tempMarkerOpacity
+      });
+      map.add(tempMarker);
+      tempLngLat = lngLat;
+      statusText.textContent = '准备添加线顶点，请张开食指和中指';
+    } else if (pointDistance > CONFIG.pointDistanceOpen && tempLngLat && now - lastPointTime > CONFIG.pointInterval) {
+      if (tempMarker) {
+        map.remove(tempMarker);
+        tempMarker = null;
+      }
+      path.push([tempLngLat.lng, tempLngLat.lat]);
+      if (!polyline) {
+        polyline = new AMap.Polyline({
+          path: path,
+          strokeColor: CONFIG.lineStrokeColor,
+          strokeWeight: CONFIG.lineStrokeWeight
+        });
+        map.add(polyline);
+        polylines.push(polyline);
+        statusText.textContent = '线起点已添加，继续添加下一个点';
+      } else {
+        polyline.setPath(path);
+        statusText.textContent = '线顶点已添加，继续添加或切换模式';
+      }
+      lastPointTime = now;
+      tempLngLat = null;
+    }
+  } else if (drawingMode === 'face') {
+    const now = Date.now();
+    if (pointDistance < CONFIG.pointDistanceClose) {
+      if (tempMarker) {
+        map.remove(tempMarker);
+        tempMarker = null;
+      }
+      let isClosing = false;
+      if (path.length > 2) {
+        const startPoint = path[0];
+        const startPixel = map.lngLatToContainer(new AMap.LngLat(startPoint[0], startPoint[1]));
+        const currentPixel = map.lngLatToContainer(lngLat);
+        const pixelDistance = Math.sqrt(
+          Math.pow(startPixel.x - currentPixel.x, 2) +
+          Math.pow(startPixel.y - currentPixel.y, 2)
+        );
+        if (pixelDistance < CONFIG.faceCloseDistance * rect.width) {
+          isClosing = true;
+          statusText.textContent = '接近起始点，闭合多边形';
+        }
+      }
+      if (!isClosing) {
+        tempMarker = new AMap.Marker({
+          position: lngLat,
+          icon: CONFIG.markerIcon,
+          offset: new AMap.Pixel(CONFIG.markerOffsetX, CONFIG.markerOffsetY),
+          opacity: CONFIG.tempMarkerOpacity
+        });
+        map.add(tempMarker);
+        tempLngLat = lngLat;
+        statusText.textContent = '准备添加面顶点，请张开食指和中指';
+      } else {
+        if (polygon) {
+          polygons.push(polygon);
+        }
+        if (polyline && path.length > 1) {
+          polylines.push(polyline);
+        }
+        polygon = new AMap.Polygon({
+          path: path,
+          fillColor: CONFIG.faceFillColor,
+          strokeColor: CONFIG.faceStrokeColor,
+          strokeWeight: CONFIG.faceStrokeWeight
+        });
+        map.add(polygon);
+        polygons.push(polygon);
+        polyline = null;
+        path = [];
+        statusText.textContent = '多边形已闭合，开始新的多边形';
+      }
+    } else if (pointDistance > CONFIG.pointDistanceOpen && tempLngLat && now - lastPointTime > CONFIG.pointInterval) {
+      if (tempMarker) {
+        map.remove(tempMarker);
+        tempMarker = null;
+      }
+      if (path.length === 0) {
+        path = [[tempLngLat.lng, tempLngLat.lat]];
+      } else {
+        path.push([tempLngLat.lng, tempLngLat.lat]);
+      }
+      if (!polygon) {
+        polygon = new AMap.Polygon({
+          path: path,
+          fillColor: CONFIG.faceFillColor,
+          strokeColor: CONFIG.faceStrokeColor,
+          strokeWeight: CONFIG.faceStrokeWeight
+        });
+        map.add(polygon);
+        polygons.push(polygon);
+      } else {
+        polygon.setPath(path);
+      }
+      if (!polyline) {
+        polyline = new AMap.Polyline({
+          path: path,
+          strokeColor: CONFIG.lineStrokeColor,
+          strokeWeight: CONFIG.lineStrokeWeight
+        });
+        map.add(polyline);
+        polylines.push(polyline);
+      } else {
+        polyline.setPath(path);
+      }
+      lastPointTime = now;
+      statusText.textContent = '面顶点已添加，继续添加下一个';
+      tempLngLat = null;
+    }
+  }
+
+  const now = Date.now();
+  if (gesture === 'pinch' && now - lastZoomTime > CONFIG.zoomInterval && !isZooming) {
+    const targetZoom = Math.max(3, map.getZoom() - CONFIG.zoomStep);
+    smoothZoom(targetZoom, lngLat, CONFIG.zoomAnimationDuration);
+    lastZoomTime = now;
+    statusText.textContent = '地图缩小';
+  } else if (gesture === 'spread' && now - lastZoomTime > CONFIG.zoomInterval && !isZooming) {
+    const targetZoom = Math.min(20, map.getZoom() + CONFIG.zoomStep);
+    smoothZoom(targetZoom, lngLat, CONFIG.zoomAnimationDuration);
+    lastZoomTime = now;
+    statusText.textContent = '地图放大';
+  }
+}
+
+function onResults(results) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!gestureEnabled) {
+    statusText.textContent = '手势识别已关闭';
+    return;
+  }
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const landmarks = results.multiHandLandmarks[0];
+    const gesture = detectGesture(landmarks);
+    updateMap(gesture, landmarks);
+    drawHandLandmarks(landmarks);
+  } else {
+    statusText.textContent = '未检测到手部';
+  }
+}
+
+function drawHandLandmarks(landmarks) {
+  const handConnections = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [0, 9], [9, 10], [10, 11], [11, 12],
+    [0, 13], [13, 14], [14, 15], [15, 16],
+    [0, 17], [17, 18], [18, 19], [19, 20]
+  ];
+
+  landmarks.forEach((landmark, index) => {
+    const x = (1 - landmark.x) * canvas.width;
+    const y = landmark.y * canvas.height;
+    ctx.beginPath();
+    ctx.arc(x, y, CONFIG.landmarkPointSize, 0, 2 * Math.PI);
+    ctx.fillStyle = CONFIG.landmarkPointColor;
+    ctx.fill();
+  });
+
+  handConnections.forEach(connection => {
+    const [start, end] = connection;
+    const startLandmark = landmarks[start];
+    const endLandmark = landmarks[end];
+
+    const startX = (1 - startLandmark.x) * canvas.width;
+    const startY = startLandmark.y * canvas.height;
+    const endX = (1 - endLandmark.x) * canvas.width;
+    const endY = endLandmark.y * canvas.height;
+
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.strokeStyle = CONFIG.connectionLineColor;
+    ctx.lineWidth = CONFIG.connectionLineWidth;
+    ctx.stroke();
+  });
+}
+
+
+function waitForMapRendered() {
+  return new Promise((resolve) => {
+    if (map.getZoom() && map.getCenter() && map.getAllOverlays().length > 0) {
+      setTimeout(resolve, 300); // 已经加载了，再等一小会儿
+    } else {
+      const completeHandler = () => {
+        map.off('complete', completeHandler);
+        setTimeout(resolve, 300); // 地图加载完成后等一会儿
+      };
+      map.on('complete', completeHandler);
+    }
+  });
+}
+
+function takeScreenshot() {
+  console.log('Starting screenshot process...');
+  return new Promise((resolve, reject) => {
+    waitForMapRendered().then(() => {
+      console.log('Map is fully rendered.');
+      const mapContainer = document.getElementById('map');
+      if (!mapContainer) {
+        console.error('Map container not found');
+        reject(new Error('Map container not found'));
+        return;
+      }
+      // 确保地图容器可见
+      mapContainer.style.display = 'block';
+      mapContainer.style.visibility = 'visible';
+      mapContainer.style.opacity = '1'; // 确保 opacity 为 1
+      console.log('Map container found. Forcing map render...');
+      // 强制重绘地图
+      if (map) {
+        map.render(); // 强制重绘地图
+      }
+      console.log('Configuring html2canvas options...');
+      html2canvas(mapContainer, {
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: true, // 允许渲染 SVG/Canvas 元素
+        scale: 2,
+        backgroundColor: null,
+        ignoreElements: (element) =>
+          element.classList.contains('amap-layer-debug') || // 排除调试用图层
+          element.tagName === 'SCRIPT' || // 排除脚本标签
+          element.tagName === 'STYLE', // 排除样式标签
+        logging: true, // 开启日志，便于调试
+        onclone: (document) => {
+          // 在克隆文档时执行，可以在这里进行一些调整
+          console.log('Cloned document:', document);
+        }
+      }).then((canvas) => {
+        console.log('Screenshot canvas generated successfully.');
+        // 保存截图用于调试
+        saveImage(canvas.toDataURL(), 'debug-screenshot.png');
+        resolve(canvas);
+      }).catch((err) => {
+        console.error('html2canvas error:', err);
+        reject(err);
+      });
+    }).catch((error) => {
+      console.error('waitForMapRendered error:', error);
+      reject(error);
+    });
+  });
+}
+
+
+
+// 将 dataURL 转换为 Blob
+function dataURLtoBlob(dataURL) {
+  const arr = dataURL.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  const n = bstr.length;
+  const u8arr = new Uint8Array(n);
+
+  for (let i = 0; i < n; i++) {
+    u8arr[i] = bstr.charCodeAt(i);
+  }
+
+  return new Blob([u8arr], { type: mime });
+}
+
+// 获取 GeoJSON 数据
+function getGeoJsonData() {
+  const features = [];
+
+  // 添加 Marker（点）
+  markers.forEach(marker => {
+    const position = marker.getPosition();
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [position.lng, position.lat]
+      },
+      properties: {
+        type: 'marker'
+      }
+    });
+  });
+
+  // 添加 Polyline（线）
+  polylines.forEach(polyline => {
+    const path = polyline.getPath(); // 获取路径坐标点
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: path.map(p => [p.lng, p.lat])
+      },
+      properties: {
+        type: 'polyline'
+      }
+    });
+  });
+
+  // 添加 Polygon（面）
+  polygons.forEach(polygon => {
+    const path = polygon.getPath(); // 获取多边形顶点
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [path.map(p => [p.lng, p.lat])]
+      },
+      properties: {
+        type: 'polygon'
+      }
+    });
+  });
+
+  return {
+    type: 'FeatureCollection',
+    features
+  };
+}
+
+// 显示提示信息
+function showFlashMessage(message, isSuccess = false) {
+  // 创建消息元素
+  const flashElement = document.createElement('div');
+  flashElement.className = `flash-message ${isSuccess ? 'success' : 'error'}`;
+  flashElement.textContent = message;
+  document.body.appendChild(flashElement);
+
+  // 3秒后自动移除提示
+  setTimeout(() => {
+    if (document.body.contains(flashElement)) {
+      document.body.removeChild(flashElement);
+    }
+  }, 3000);
+}
+// 保存图片到本地
+function saveImage(dataURL, filename) {
+  const link = document.createElement('a');
+  link.href = dataURL;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+// 上传到服务器
+function uploadToServer(mapInfo) {
+  console.log('uploadToServer called with mapInfo:', mapInfo);
+
+  // 获取当前的 GeoJSON 数据
+  const geojsonData = getGeoJsonData();
+
+  // 构建 FormData 对象
+  const formData = new FormData();
+
+  // 添加文件字段
+  const file = new Blob([JSON.stringify(geojsonData, null, 2)], { type: 'application/json' });
+  formData.append('file', file, 'test.geojson');
+
+  // 添加其他参数
+  formData.append('mapTitle', mapInfo.mapTitle);
+  formData.append('categories', mapInfo.categories.join(','));
+  formData.append('label', '路线.旅游');
+  formData.append('description', mapInfo.description);
+  formData.append('visibility', 'public');
+  formData.append('copyright', 'original');
+  formData.append('allowDownload', 'true');
+  formData.append('editable', 'no_edit');
+  formData.append('geospatialData', '{"lat": 39.9042, "lng": 116.4074}');
+  formData.append('mapCoordinate', '(116.4074, 39.9042)');
+  formData.append('uploadedCoordinate', mapInfo.uploadedCoordinate);
+  formData.append('mode', mapInfo.mode || 'Gesture');
+
+  // 调用截图函数生成截图
+  takeScreenshot().then((canvas) => {
+    const thumbnailBlob = dataURLtoBlob(canvas.toDataURL());
+    formData.append('thumbnail', thumbnailBlob, 'screenshot.png');
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showFlashMessage('请先登录！');
+      return;
+    }
+
+    const headers = {
+      'Device-Type': 'app',
+      'Authorization': `Bearer ${token}`
+    };
+
+    // 发送 POST 请求
+    fetch('http://10.3.27.104:8181/mapService/api/v1/map/publish/vector', {
+      method: 'POST',
+      headers: headers,
+      body: formData
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Server returned an error: ' + response.statusText);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        console.log('服务器返回的数据:', data);
+        showFlashMessage('成功上传到服务器', true);
+      })
+      .catch((error) => {
+        console.error('上传失败:', error);
+        showFlashMessage('上传失败: ' + error.message);
+      });
+  }).catch((error) => {
+    console.error('Failed to generate screenshot:', error);
+    showFlashMessage('生成截图失败: ' + error.message);
+  });
+}
+
+// 显示保存到服务器弹窗
+function showSaveToServerModal() {
+  console.log('showSaveToServerModal called');
+
+  const modal = document.getElementById('saveToServerModal');
+  if (!modal) {
+    console.error('Modal element not found');
+    return;
+  }
+
+  // 获取或创建遮罩层
+  let overlay = document.getElementById('modalOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modalOverlay';
+    overlay.className = 'save-modal-overlay';
+    document.body.appendChild(overlay);
+  }
+
+  // 设置遮罩层显示并置于底层
+  overlay.style.display = 'block';
+  overlay.style.zIndex = '1001'; // 遮罩层 z-index 为 1001
+
+  // 设置弹窗显示并置于最上层
+  modal.style.display = 'block';
+  modal.style.zIndex = '1002'; // 弹窗 z-index 为 1002
+  modal.style.pointerEvents = 'auto';
+
+  setupMapClickListener();
+}
+
+// 设置地图点击监听器
+function setupMapClickListener() {
+  const getCoordinatesBtn = document.getElementById('getCoordinatesBtn');
+  if (getCoordinatesBtn) {
+    // 移除已有的监听器（避免重复绑定）
+    const existingListener = getCoordinatesBtn.dataset.listener;
+    if (existingListener) {
+      getCoordinatesBtn.removeEventListener('click', handleGetCoordinatesClick);
+    }
+
+    // 添加新的监听器
+    getCoordinatesBtn.addEventListener('click', handleGetCoordinatesClick);
+    getCoordinatesBtn.dataset.listener = 'true';
+  }
+}
+
+function handleGetCoordinatesClick() {
+  // 隐藏弹窗和遮罩层
+  const modal = document.getElementById('saveToServerModal');
+  const overlay = document.getElementById('modalOverlay');
+
+  if (modal) modal.style.display = 'none';
+  if (overlay) overlay.style.display = 'none';
+
+  // 获取地图容器
+  const mapContainer = document.getElementById('map');
+  if (!mapContainer) {
+    console.error('Map container not found');
+    return;
+  }
+
+  // 改变光标样式为十字
+  mapContainer.style.cursor = 'crosshair';
+
+  // 绑定一次性的地图点击事件
+  const clickHandler = function (e) {
+    // 获取点击位置的经纬度
+    const pixel = new AMap.Pixel(e.clientX, e.clientY);
+    const lngLat = map.containerToLngLat(pixel);
+
+    const coordinateInput = document.getElementById('uploadedCoordinate');
+    if (coordinateInput) {
+      coordinateInput.value = `(${lngLat.getLng()}, ${lngLat.getLat()})`;
+    }
+
+    // 恢复鼠标样式
+    mapContainer.style.cursor = 'default';
+
+    // 移除点击监听器
+    map.off('click', clickHandler);
+
+    // 重新显示弹窗和遮罩层
+    if (modal) modal.style.display = 'block';
+    if (overlay) overlay.style.display = 'block';
+  };
+
+  // 监听地图点击
+  map.on('click', clickHandler);
+}
+
+// 关闭弹窗
+function hideSaveToServerModal() {
+  const modal = document.getElementById('saveToServerModal');
+  const overlay = document.getElementById('modalOverlay');
+
+  if (modal) {
+    modal.style.display = 'none';
+  }
+
+  if (overlay) {
+    overlay.style.display = 'none';
+  }
+}
+
+
+
+// 确认保存函数
+function handleConfirmSave() {
+  const mapTitle = document.getElementById('mapTitle').value;
+  const uploadedCoordinate = document.getElementById('uploadedCoordinate').value;
+  const categories = Array.from(document.getElementById('categories').selectedOptions).map(option => option.value);
+  const description = document.getElementById('description').value;
+
+  if (!mapTitle || categories.length === 0) {
+    alert('地图名称和地图类型为必填项！');
+    return;
+  }
+
+  const mapInfo = {
+    mapTitle,
+    uploadedCoordinate,
+    categories,
+    description,
+    mode: document.getElementById('mode')?.value || 'Gesture'
+  };
+
+  hideSaveToServerModal();
+
+  // ✅ 打印地图元素数量用于调试
+  console.log('Markers:', markers.length);
+  console.log('Polylines:', polylines.length);
+  console.log('Polygons:', polygons.length);
+
+
+  // 打印 GeoJSON 数据
+  const geojsonData = getGeoJsonData();
+  console.log('GeoJSON Data:', geojsonData);
+
+  // 截图并下载
+  takeScreenshot()
+    .then((canvas) => {
+      const dataURL = canvas.toDataURL('image/png');
+      saveImage(dataURL, 'screenshot.png');
+      uploadToServer(mapInfo);
+    })
+    .catch((error) => {
+      console.error('截图失败:', error);
+      alert('截图失败，请重试');
+    });
+}
+
+// 取消按钮点击事件
+function handleCancelSave() {
+  hideSaveToServerModal();
+}
+
+// 在 DOM 加载完成后绑定事件监听器
+document.addEventListener('DOMContentLoaded', function () {
+  // 为保存按钮绑定事件（假设保存按钮是第二个 .top-bar .btn）
+  const saveButton = document.querySelector('.top-bar .btn:nth-child(2)');
+  if (saveButton) {
+    // 移除可能存在的旧监听器
+    const oldOnClick = saveButton.onclick;
+    if (oldOnClick) {
+      saveButton.removeEventListener('click', oldOnClick);
+    }
+
+    // 添加新监听器
+    saveButton.addEventListener('click', function () {
+      showSaveToServerModal();
+    });
+  }
+
+  // 为确认和取消按钮绑定事件
+  const confirmBtn = document.getElementById('confirmBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+
+  if (confirmBtn) {
+    // 移除可能存在的旧监听器
+    const oldOnClick = confirmBtn.onclick;
+    if (oldOnClick) {
+      confirmBtn.removeEventListener('click', oldOnClick);
+    }
+
+    confirmBtn.addEventListener('click', handleConfirmSave);
+  }
+
+  if (cancelBtn) {
+    // 移除可能存在的旧监听器
+    const oldOnClick = cancelBtn.onclick;
+    if (oldOnClick) {
+      cancelBtn.removeEventListener('click', oldOnClick);
+    }
+
+    cancelBtn.addEventListener('click', handleCancelSave);
+  }
+});
+// 初始化权限检查
+window.addEventListener('load', async () => {
+  const permissionState = await checkCameraPermission();
+  if (permissionState === 'granted') {
+    setupCamera();
+  } else if (permissionState === 'denied') {
+    cameraPrompt.style.display = 'flex';
+    permissionMessage.textContent = '摄像头权限被拒绝，请在浏览器设置中允许访问';
+    permissionGuide.style.display = 'block';
+  } else {
+    cameraPrompt.style.display = 'flex';
+    permissionMessage.textContent = '请点击“启动摄像头”以授予权限';
+  }
+
+  startCameraButton.addEventListener('click', () => {
+    permissionGuide.style.display = 'none';
+    setupCamera();
+  });
+});
