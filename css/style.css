@@ -1,0 +1,541 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background-color: #f5f5f5;
+}
+
+.container {
+  width: 90%;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.left-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.right-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn {
+  background-color: #dcdcdc;
+  color: black;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.btn:hover {
+  background-color: #bababa;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+}
+
+.status-indicator {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background-color: rgb(18, 236, 18);
+  margin-right: 10px;
+}
+
+#status-text {
+  font-size: 16px;
+}
+
+.map-container {
+  width: 100%;
+  height: 600px;
+  position: relative;
+  overflow: hidden;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+#videoContainer {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: black;
+  z-index: 1;
+}
+
+#video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+#canvas {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 9999; /* 必须高于高德地图内部图层(amap-vectors z-index:110)，确保手部识别骨架可见 */
+  pointer-events: none; /* 让点击穿透到地图，不影响地图交互 */
+}
+
+.controls-container {
+  width: 100%;
+  margin-top: 20px;
+}
+
+.controls {
+  display: flex;
+  gap: 30px;
+}
+
+.control-btn {
+  background-color: #dcdcdc;
+  color: black;
+  border: none;
+  padding: 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.control-btn:hover {
+  background-color: #bababa;
+}
+
+.control-btn.active {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  margin-bottom: 5px;
+}
+
+#cameraSelect {
+  padding: 8px;
+  border-radius: 4px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+/* 覆盖层样式，适配现有 UI */
+.camera-prompt {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7); /* 半透明黑色背景，与现有阴影风格一致 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000; /* 高于 #canvas (z-index: 3) 和 #map (z-index: 2) */
+}
+
+.prompt-content {
+  background: white; /* 与 .container 背景一致 */
+  padding: 20px;
+  border-radius: 8px; /* 与 .container, .btn 圆角一致 */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 与 .container 阴影一致 */
+  text-align: center;
+  max-width: 500px;
+  width: 90%;
+}
+
+.prompt-content h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-family: Arial, sans-serif; /* 与 body 字体一致 */
+  color: #333; /* 深色文字，与现有文本风格一致 */
+}
+
+.prompt-content p {
+  margin: 0 0 20px;
+  font-size: 16px; /* 与 #status-text 字体大小一致 */
+  color: #333;
+}
+
+.prompt-content .btn {
+  background: #dcdcdc; /* 与现有 .btn 背景一致 */
+  color: black;
+  border: none;
+  padding: 10px 20px; /* 与现有 .btn 一致 */
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.prompt-content .btn:hover {
+  background: #bababa; /* 与现有 .btn:hover 一致 */
+}
+
+#permissionGuide {
+  font-size: 14px; /* 略小于正文，保持可读性 */
+  color: #333;
+  line-height: 1.5;
+  margin-top: 20px;
+}
+
+#permissionGuide code {
+  background: #f0f0f0; /* 浅灰背景，区分代码 */
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace; /* 代码字体 */
+}
+
+/****************************************************************
+*  主导航  *
+****************************************************************/
+
+.nav1
+{
+    width: 98vw;
+    height:37px;
+    background-color: #fcfcfc; 
+}
+
+.nav1 .wrap
+{
+    width: 100%;
+    height:28px;
+    margin: 0 auto;
+}
+
+.nav1 .wrap li
+{
+    float: left;
+    position: relative;
+    margin: 2px;
+}
+
+.nav1 .wrap .nav1-left
+{
+    float: left;
+    margin-left: 20px;
+}
+
+.nav1 .wrap .nav1-left li img
+{
+    width: 25px;
+    height: 25px;
+}
+
+.nav1 .wrap .nav1-left li .logo
+{
+    font-size: 20px;
+    color: #434343;
+    font-weight: bold;
+}
+
+.nav1 .wrap .nav1-right
+{
+    float: right;
+}
+
+.nav1 .wrap .nav1-right li #loginButton {
+	width: 80px;
+	height: 35px;
+	background-color: #1B96FF;
+	border-style: solid;
+	border-color: #1B96FF;
+	border-radius: 15px;
+	font-size: 15px;
+	color: #ffffff;
+}
+
+/* 新增头像按钮样式 */
+.nav1 .wrap .nav1-right li .avatar-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+.nav1 .wrap .nav1-right li .avatar-button img {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    vertical-align: middle;
+    transition: transform 0.2s;
+}
+
+.nav1 .wrap .nav1-right li .avatar-button:hover img {
+    transform: scale(1.1);
+}
+
+.nav1 .wrap .nav1-right li #logoutButton {
+	width: 50px;
+	height: 25px;
+	background-color: #7f8081;
+	border-style: solid;
+	border-color: #7f8081;
+	border-radius: 15px;
+	font-size: 13px;
+	color: #ffffff;
+}
+
+.nav1 .wrap .nav1-right .hidden {
+    display: none;
+}
+
+.nav1 .wrap .nav1-right .notices .iconfont{
+	font-size: 1.5em; 
+}
+.nav1 .wrap .nav1-right .messages .iconfont{
+	font-size: 1.5em; 
+}
+
+.nav1 a {
+	color: #434343;
+	font-size: 15px;
+	line-height: 30px;
+	text-decoration: none;
+	margin-left: 10px;
+	font-weight: bold;
+}
+
+/* APP下载 开始 */
+.download {
+	width: 100px;
+	height: 0px;
+	background: #fff;
+	box-shadow: 0 1px 5px #aaa;
+	position: absolute;
+	top: 40px;
+	left: 50%;
+	margin-left: -62px;
+	overflow: hidden;
+	z-index: 1000;
+	text-align: center;
+}
+
+.download img {
+	width: 90px;
+	margin: 18px auto 0;
+
+}
+
+.download p {
+	color: #333;
+	font-size: 12px;
+	line-height: 12px;
+	text-align: center;
+}
+
+.nav1-left li:hover>.download {
+	height: 100px;
+}
+
+/* APP下载 结束 */
+
+/* 通知 开始 */
+/* 鼠标移动过去变蓝色 */
+.notices-list {
+	width: 180px;
+	height: 0px;
+	background: #fff;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+	position: absolute;
+	left: -150px;
+	top: 25px;
+	color: #424242;
+	/* 超出内容隐藏 */
+	overflow: hidden;
+	line-height: 50px;
+	z-index: 1000;
+	text-align: center;
+}
+
+.notices:hover>.notices-list {
+	height: 50px;
+}
+
+/* 通知 结束 */
+
+/* 消息 开始 */
+/* 鼠标移动过去变蓝色 */
+.messages-list {
+	width: 180px;
+	height: 0px;
+	background: #fff;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+	position: absolute;
+	/* right: 50px; */
+	left: -140px;
+	top: 25px;
+	color: #424242;
+	overflow: hidden;
+	line-height: 50px;
+	z-index: 1000;
+	text-align: center;
+}
+
+.messages:hover>.messages-list {
+	height: 50px;
+}
+
+/* 消息 结束 */
+
+/* 弹窗样式 */
+#saveToServerModal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1002;
+  display: none;
+  pointer-events: auto;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  width: 400px;
+  max-width: 90%;
+}
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  font-weight: bold;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-group select[multiple] {
+  height: 100px;
+}
+
+.location-button {
+  margin-left: 10px;
+  padding: 6px 0;
+  width: 60px;
+  text-align: center;
+  background: #ccc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* .location-button:hover {
+  opacity: 0.8;
+} */
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+#cancelBtn,
+#confirmBtn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#cancelBtn {
+  background-color: #ccc;
+  color: #333;
+}
+
+#confirmBtn {
+  background-color: #1890ff;
+  color: white;
+}
+
+#cancelBtn:hover,
+#confirmBtn:hover {
+  opacity: 0.8;
+}
+
+.flash-message {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 6px;
+  background-color: #333;
+  color: #fff;
+  z-index: 9999;
+  font-size: 14px;
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+}
+
+.flash-message.success {
+  background-color: #4caf50;
+}
+
+.flash-message.error {
+  background-color: #f44336;
+}
